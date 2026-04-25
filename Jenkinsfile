@@ -30,6 +30,7 @@ pipeline {
             steps {
                 echo "Analizando vulnerabilidades en dependencias..."
                 sh '''
+                    docker run --rm ${IMAGE_NAME}:${IMAGE_TAG} \
                     npm audit --audit-level=critical || \
                     (echo "Vulnerabilidades críticas en dependencias" && exit 1)
                 '''
