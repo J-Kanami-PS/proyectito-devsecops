@@ -6,11 +6,11 @@ pipeline {
     }
 
     environment {
-        NEXUS_URL      = "http://nexus:8083"
+        NEXUS_URL      = "http://localhost:8083"
         CREDENTIALS_ID = "nexus-credentials"
         IMAGE_NAME     = "sumador"
         IMAGE_TAG      = "${env.BUILD_NUMBER}"
-        NEXUS_HOST     = "nexus:8083"
+        NEXUS_HOST     = "localhost:8083"
     }
 
     stages {
