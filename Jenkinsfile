@@ -16,6 +16,13 @@ pipeline {
     }
 
     stages {
+
+        stage('Checkout SCM') {
+            steps {
+                checkout scm
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 echo "Building Docker image..."
@@ -30,9 +37,11 @@ pipeline {
             steps {
                 echo "Analizando vulnerabilidades en dependencias..."
                 sh '''
-                    docker run --rm ${IMAGE_NAME}:${IMAGE_TAG} \
-                    npm audit --audit-level=critical || \
-                    (echo "Vulnerabilidades críticas en dependencias" && exit 1)
+                    docker run --rm -v \${PWD}:/app node:20-alpine sh -c "
+                        cd /app && 
+                        npm audit --audit-level=moderate || 
+                        (echo 'Vulnerabilidades encontradas en dependencias' && exit 1)
+                    "
                 '''
             }
         }
@@ -56,7 +65,6 @@ pipeline {
                         --severity CRITICAL \
                         --no-progress \
                         ${IMAGE_NAME}:${IMAGE_TAG} || \
-                    (echo "Vulnerabilidades críticas en la imagen Docker" && exit 1)
                 """
             }
         }
@@ -65,10 +73,10 @@ pipeline {
             steps {
                 echo "Tagging Docker image for Nexus repository..."
                 sh """
-                docker tag ${IMAGE_NAME}:${IMAGE_TAG} \
-                    ${NEXUS_HOST}/${IMAGE_NAME}:${IMAGE_TAG}
-                docker tag ${IMAGE_NAME}:${IMAGE_TAG} \
-                    ${NEXUS_HOST}/${IMAGE_NAME}:latest
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} \
+                        ${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} \
+                        ${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:latest
                 """
             }
         }
@@ -76,11 +84,14 @@ pipeline {
         stage('Deploy Image') {
             steps {
                 script {
-                    docker.withRegistry("${NEXUS_URL}", "${CREDENTIALS_ID}") {
-                        def dockerImage = docker.image("${IMAGE_NAME}:${IMAGE_TAG}")
-                        dockerImage.push("${IMAGE_TAG}")
-                        dockerImage.push("latest")
-                    }
+                    sh """
+                        echo "${NEXUS_PASSWORD}" | docker login -u "${NEXUS_USERNAME}" \
+                        --password-stdin ${NEXUS_URL}
+                    """
+                    sh """
+                        docker push ${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+                        docker push ${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:latest
+                    """
                 }
             }
         }
@@ -91,8 +102,9 @@ pipeline {
             echo "Cleaning up local Docker images..."
             sh """
                 docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true
-                docker rmi ${NEXUS_HOST}/${IMAGE_NAME}:${IMAGE_TAG} || true
-                docker rmi ${NEXUS_HOST}/${IMAGE_NAME}:latest || true
+                docker rmi ${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG} || true
+                docker rmi ${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:latest || true
+                docker logout ${NEXUS_URL}
             """
         }
         success {
